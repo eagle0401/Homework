@@ -1,15 +1,18 @@
 package com.example.noodoe.ui.login
 
+import android.util.Patterns
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import android.util.Patterns
-import com.example.noodoe.data.LoginRepository
-import com.example.noodoe.data.Result
-
 import com.example.noodoe.R
+import com.example.noodoe.data.model.LoggedInUser
+import com.example.noodoe.service.MyAPIService
+import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.CompositeDisposable
+import io.reactivex.schedulers.Schedulers
 
-class LoginViewModel(private val loginRepository: LoginRepository) : ViewModel() {
+class LoginViewModel : ViewModel() {
 
     private val _loginForm = MutableLiveData<LoginFormState>()
     val loginFormState: LiveData<LoginFormState> = _loginForm
@@ -17,16 +20,19 @@ class LoginViewModel(private val loginRepository: LoginRepository) : ViewModel()
     private val _loginResult = MutableLiveData<LoginResult>()
     val loginResult: LiveData<LoginResult> = _loginResult
 
-    fun login(username: String, password: String) {
-        // can be launched in a separate asynchronous job
-        val result = loginRepository.login(username, password)
+    var compositeDisposable: CompositeDisposable? = null
 
-        if (result is Result.Success) {
-            _loginResult.value =
-                LoginResult(success = LoggedInUserView(displayName = result.data.displayName))
-        } else {
-            _loginResult.value = LoginResult(error = R.string.login_failed)
-        }
+    fun login(username: String, password: String) {
+
+        val retrofitManager = MyAPIService.RetrofitManager.instance
+        val observable: Observable<LoggedInUser> = retrofitManager.api.login(username, password)
+        compositeDisposable!!.add(
+            observable.subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                    { loggedInUser -> _loginResult.value = LoginResult(success = loggedInUser) },
+                    { error -> _loginResult.value = LoginResult(error = R.string.login_failed) })
+        )
     }
 
     fun loginDataChanged(username: String, password: String) {
@@ -41,11 +47,7 @@ class LoginViewModel(private val loginRepository: LoginRepository) : ViewModel()
 
     // A placeholder username validation check
     private fun isUserNameValid(username: String): Boolean {
-        return if (username.contains('@')) {
-            Patterns.EMAIL_ADDRESS.matcher(username).matches()
-        } else {
-            username.isNotBlank()
-        }
+        return username.contains('@') && Patterns.EMAIL_ADDRESS.matcher(username).matches()
     }
 
     // A placeholder password validation check
